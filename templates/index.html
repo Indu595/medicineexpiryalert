@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f7fb">
+  <meta name="description" content="A medicine expiry alert system that helps you identify expired medicines and act before products expire.">
+  <title>Medicine Expiry Alert System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=4) }}">
+</head>
+<body>
+  <main class="auth-screen" id="authView" hidden>
+    <section class="auth-card" aria-labelledby="authTitle">
+      <a class="brand auth-brand" href="/" aria-label="Medicine expiry alerts home">
+        <span class="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 5h6v8h8v6h-8v8h-6v-8H5v-6h8z" fill="currentColor"/></svg></span>
+        <span class="brand-copy">ExpiryCare<span>MEDICINE SAFETY</span></span>
+      </a>
+      <div class="auth-heading"><span class="eyebrow"><span class="pulse-dot"></span> HOSPITAL MEDICINE SAFETY</span><h1 id="authTitle">Sign in to ExpiryCare</h1><p id="authDescription">Sign in with the account provided by your hospital administrator.</p></div>
+      <div class="auth-switch" id="authSwitch" hidden>
+        <button class="auth-switch-button auth-switch-active" id="showSignup" type="button">Sign up</button>
+        <button class="auth-switch-button" id="showLogin" type="button">Sign in</button>
+      </div>
+      <form id="loginForm">
+        <label class="form-field"><span>Account type</span><select class="auth-input" name="role" id="loginRole"><option value="branch_admin">Branch head</option><option value="main_admin">Main administrator</option></select></label>
+        <label class="form-field" id="loginBranchField"><span>Hospital branch</span><select class="auth-input" name="branch_id" id="loginBranch" required></select></label>
+        <label class="form-field"><span>Email address</span><input class="auth-input" name="email" type="email" autocomplete="username" required></label>
+        <label class="form-field"><span>Password</span><input class="auth-input" name="password" type="password" autocomplete="current-password" required></label>
+        <div class="auth-error" id="loginError" role="alert"></div>
+        <button class="button button-primary auth-submit" type="submit" id="loginButton">Sign in</button>
+      </form>
+      <form id="setupForm" hidden>
+        <p class="setup-notice">Create the main administrator account. You can then create hospital branches and issue branch-head email and password credentials. Passwords must be at least 12 characters.</p>
+        <label class="form-field"><span>Main administrator email</span><input class="auth-input" name="email" type="email" autocomplete="username" required></label>
+        <label class="form-field"><span>Password <small>(12+ characters)</small></span><input class="auth-input" name="password" type="password" minlength="12" required autocomplete="new-password"></label>
+        <div class="auth-error" id="setupError" role="alert"></div>
+        <button class="button button-primary auth-submit" type="submit" id="setupButton">Create main administrator</button>
+      </form>
+    </section>
+  </main>
+
+  <div class="app-shell" id="appShell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="/" aria-label="Medicine expiry alerts home">
+        <span class="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 5h6v8h8v6h-8v8h-6v-8H5v-6h8z" fill="currentColor"/></svg></span>
+        <span class="brand-copy">ExpiryCare<span>MEDICINE SAFETY</span></span>
+      </a>
+      <div class="side-label">WORKSPACE</div>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a class="nav-link active branch-admin-only" href="#dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="4" rx="1.5"/><rect x="13.5" y="10.5" width="7" height="10" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span>Expiry alerts</span></a>
+        <a class="nav-link branch-admin-only" href="#inventory"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h16v13H4zM3 4h18v3.5H3zM9 11h6"/></svg><span>Tracked medicines</span><span class="nav-count" id="navTotal">0</span></a>
+        <a class="nav-link branch-admin-only" href="#inventory" data-status-link="upcoming"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg><span>Upcoming expiry</span></a>
+        <a class="nav-link main-admin-only" href="#branchManagement"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V8l8-4 8 4v12M9 20v-6h6v6M9 9h.01M15 9h.01"/></svg><span>Branch access</span></a>
+      </nav>
+      <div class="side-label side-label-space">ORGANIZATION</div>
+      <div class="workspace-card">
+        <span class="workspace-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V8l8-4 8 4v12M9 20v-6h6v6M9 9h.01M15 9h.01"/></svg></span>
+        <span class="workspace-copy"><strong id="workspaceName">Medicine records</strong><small id="workspaceType">Hospital branch</small></span>
+        <span class="online-dot" aria-label="Online"></span>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="help-card"><span class="help-icon">?</span><strong>Branch-specific access</strong><p>Medicine expiry records are only visible to your hospital branch.</p></div>
+        <div class="profile"><span class="avatar">EC</span><span class="profile-copy"><strong id="profileUsername">ExpiryCare</strong><small id="profileRole">Medicine safety</small></span><button class="more-button" id="logoutButton" aria-label="Sign out" title="Sign out">↗</button></div>
+      </div>
+    </aside>
+
+    <main class="main-content" id="dashboard">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="Toggle navigation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <div class="breadcrumbs"><span id="breadcrumbContext">Medicine safety</span><span class="crumb-slash">/</span><strong id="breadcrumbCurrent">Expiry alerts</strong></div>
+        <div class="topbar-right">
+          <span class="today-label" id="todayLabel"></span>
+          <span class="top-divider"></span>
+          <button class="icon-button notification-button" id="notificationButton" title="Enable browser notifications" aria-label="Enable browser notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><i></i></button>
+          <span class="avatar top-avatar" id="topAvatar">EC</span>
+        </div>
+      </header>
+
+      <div class="page-content">
+        <section class="branch-management main-admin-only" id="branchManagement" hidden>
+          <div class="welcome-row"><div><div class="eyebrow"><span class="pulse-dot"></span> ORGANIZATION ACCESS</div><h1>Branch access</h1><p class="page-subtitle">Create branches and issue or reset branch-head sign-in credentials.</p></div></div>
+          <div class="branch-access-card">
+            <h2>Grant branch head access</h2>
+            <form id="branchAccessForm">
+              <div class="form-grid">
+                <label class="form-field field-full"><span>Hospital branch</span><select class="auth-input" name="branch_id" id="adminBranchSelect"><option value="">Create a new branch…</option></select></label>
+                <label class="form-field field-full" id="newBranchField"><span>New branch name</span><input class="auth-input" name="branch_name" maxlength="120" placeholder="e.g. North Hospital"></label>
+                <label class="form-field"><span>Branch head email</span><input class="auth-input" name="email" type="email" autocomplete="off" required></label>
+                <label class="form-field"><span>Set password <small>(12+ characters)</small></span><input class="auth-input" name="password" type="password" minlength="12" autocomplete="new-password" required></label>
+              </div>
+              <p class="setup-notice">Saving for a branch that already has access replaces that branch head’s email and password. Credentials are not emailed automatically; share them securely.</p>
+              <div class="auth-error" id="branchAccessError" role="alert"></div>
+              <button class="button button-primary" type="submit" id="branchAccessButton">Save branch access</button>
+            </form>
+          </div>
+          <section class="branch-table-card">
+            <div class="section-heading"><div><h2>Hospital branches</h2><p>Each branch head can access medicines in their assigned branch only.</p></div></div>
+            <div class="table-wrap"><table><thead><tr><th>HOSPITAL BRANCH</th><th>BRANCH HEAD EMAIL</th><th>ACCESS</th></tr></thead><tbody id="branchRows"></tbody></table></div>
+          </section>
+        </section>
+
+        <section class="welcome-row branch-admin-only">
+          <div><div class="eyebrow"><span class="pulse-dot"></span> MEDICINE EXPIRY ALERTS</div><h1>Medicine expiry alerts <span class="wave">✦</span></h1><p class="page-subtitle">See what has expired and what needs attention before it does.</p></div>
+          <div class="header-actions"><button class="button button-secondary" id="readExpiryAlerts" type="button" aria-label="Read expiry alerts aloud"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5Zm4 4a5 5 0 0 1 0 6m3-9a9 9 0 0 1 0 12"/></svg>Read alerts</button><button class="button button-secondary" id="exportButton"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3"/></svg>Export CSV</button><button class="button button-primary" id="addMedicineButton"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add medicine</button></div>
+        </section>
+
+        <section class="stat-grid branch-admin-only" aria-label="Medicine expiry alert statistics">
+          <article class="stat-card"><div class="stat-top"><span class="stat-label">Expired</span><span class="stat-icon icon-red"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="m9 9 6 6m0-6-6 6"/></svg></span></div><div class="stat-value" id="statExpired">—</div><div class="stat-foot"><span class="foot-dot red-dot"></span>Remove from use immediately</div></article>
+          <article class="stat-card"><div class="stat-top"><span class="stat-label">Expiring in 7 days</span><span class="stat-icon icon-amber"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg></span></div><div class="stat-value" id="statUrgent">—</div><div class="stat-foot"><span class="foot-dot amber-dot"></span>Urgent expiry alerts</div></article>
+          <article class="stat-card"><div class="stat-top"><span class="stat-label">Expiring in 30 days</span><span class="stat-icon icon-blue"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg></span></div><div class="stat-value" id="statSoon">—</div><div class="stat-foot"><span class="foot-dot blue-dot"></span>Plan ahead for these medicines</div></article>
+          <article class="stat-card"><div class="stat-top"><span class="stat-label">Expiring in 90 days</span><span class="stat-icon icon-violet"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg></span></div><div class="stat-value" id="statUpcoming">—</div><div class="stat-foot"><span class="foot-dot violet-dot"></span>Upcoming expiry watch</div></article>
+        </section>
+
+        <details class="overview-panel branch-admin-only">
+          <summary><span>Medicine Expiry Alert System</span><span class="overview-summary-hint">Project overview &amp; objectives</span></summary>
+          <div class="overview-content">
+            <div class="overview-introduction">
+              <h2>Project overview</h2>
+              <p>The Medicine Expiry Alert System tracks medicine batch and expiry information and notifies users before medicines expire. It supports individuals, pharmacies, hospitals, and medical stores in monitoring medicine stock and availability, reducing waste and helping prevent expired medicines from being used or sold.</p>
+              <p>Each record can include medicine name, batch number, manufacturing date, expiry date, quantity, and calculated stock availability. Expiry dates are checked automatically whenever the dashboard refreshes.</p>
+            </div>
+            <div class="overview-objectives">
+              <h2>System objectives</h2>
+              <ul>
+                <li>Monitor medicine expiry dates automatically.</li>
+                <li>Alert users 90, 30, and 7 days before expiry.</li>
+                <li>Reduce medicine waste and financial losses.</li>
+                <li>Maintain accurate medicine and stock records.</li>
+                <li>Clearly identify expired medicine to help prevent use or sale.</li>
+                <li>Support medicine stock availability management.</li>
+              </ul>
+            </div>
+          </div>
+        </details>
+
+        <section class="alert-banner branch-admin-only" id="alertBanner" aria-live="polite">
+          <span class="alert-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 16H3l9-16Z"/><path d="M12 9v4m0 3h.01"/></svg></span>
+          <span class="alert-message"><strong id="alertTitle">A few items need your attention</strong><span id="alertDescription">Review medicines approaching their expiry date.</span></span>
+          <button class="alert-action" id="reviewAlerts">Review alerts <span>→</span></button>
+          <button class="dismiss-alert" id="dismissAlert" aria-label="Dismiss alert">×</button>
+        </section>
+
+        <section class="inventory-section branch-admin-only" id="inventory">
+          <div class="section-heading"><div><div class="section-title-line"><h2>Expiry monitoring</h2><span class="inventory-count" id="inventoryCount">0 medicines</span></div><p>Medicines are ordered by expiry date so urgent alerts stay visible.</p></div><button class="button button-primary compact-add" id="addMedicineButtonMobile"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add medicine</button></div>
+          <div class="inventory-toolbar">
+            <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg><input id="searchInput" type="search" placeholder="Search medicines or batch no..." autocomplete="off"><kbd>⌘ K</kbd></label>
+            <div class="toolbar-right"><label class="filter-select"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10m-7 6h4"/></svg><select id="statusFilter" aria-label="Filter by expiry status"><option value="all">All status</option><option value="expired">Expired</option><option value="expiring_15_days">Expiring within 15 days</option><option value="urgent">Expiring in 7 days</option><option value="soon">Expiring in 30 days</option><option value="upcoming">Expiring in 90 days</option><option value="safe">Safe</option></select><span class="select-chevron">⌄</span></label><button class="filter-chip" id="lowStockFilter" type="button" aria-pressed="false"><span class="tiny-dot"></span>Low stock</button></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>MEDICINE</th><th>BATCH NUMBER</th><th>MANUFACTURED</th><th>EXPIRY DATE</th><th>QUANTITY</th><th>AVAILABILITY</th><th>EXPIRY STATUS</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="medicineRows"><tr><td colspan="8" class="loading-cell">Loading expiry records…</td></tr></tbody></table>
+            <div class="mobile-inventory" id="mobileInventory"></div>
+          </div>
+          <div class="table-footer"><span id="tableSummary">Showing 0 medicines</span><span class="updated-label"><i></i> Expiry alerts up to date</span></div>
+        </section>
+        <footer class="page-footer branch-admin-only"><span>ExpiryCare <span class="footer-separator">·</span> Medicine expiry alert system</span><span>Know before it expires.</span></footer>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="medicineModal" aria-hidden="true">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-header"><div><span class="modal-kicker">EXPIRY MONITORING</span><h2 id="modalTitle">Add a medicine</h2><p>Enter the medicine batch and expiry date to receive alerts.</p></div><button class="modal-close" id="closeModal" aria-label="Close dialog">×</button></div>
+      <form id="medicineForm">
+        <div class="form-grid">
+          <label class="form-field field-full"><span>Medicine name <i>*</i></span><input name="name" required maxlength="120" placeholder="e.g. Paracetamol 500 mg"></label>
+          <label class="form-field"><span>Batch number <i>*</i></span><input name="batch_number" required maxlength="80" placeholder="e.g. PCM-24107"></label>
+          <label class="form-field"><span>Quantity available <i>*</i></span><input name="quantity" type="number" min="0" step="1" required placeholder="0"><small class="field-hint">Availability is calculated from the quantity.</small></label>
+          <label class="form-field"><span>Manufacturing date <small>(optional)</small></span><input name="manufacture_date" type="date"><small class="field-hint">Leave blank if the date is not available.</small></label>
+          <label class="form-field field-full"><span>Expiry date <i>*</i></span><input name="expiry_date" type="date" required></label>
+        </div>
+        <div class="form-error" id="formError" role="alert"></div>
+        <div class="modal-footer"><span><i>*</i> Required fields</span><div><button type="button" class="button button-secondary" id="cancelModal">Cancel</button><button type="submit" class="button button-primary" id="saveMedicine">Save medicine</button></div></div>
+      </form>
+    </section>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="{{ url_for('static', filename='app.js', v=3) }}" defer></script>
+</body>
+</html>
