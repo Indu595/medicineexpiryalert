@@ -1,5 +1,6 @@
 import csv
 import io
+import re
 import sqlite3
 from datetime import date, timedelta
 
@@ -191,6 +192,141 @@ def test_setup_and_branch_access_validate_credentials(client):
         "/api/auth/setup",
         json={"email": "invalid", "password": "a-long-enough-password"},
     ).status_code == 400
+
+
+def test_reset_main_admin_password(tmp_path, monkeypatch):
+    database = tmp_path / "reset-admin-password.db"
+    monkeypatch.setattr(medicine_app, "DATABASE", database)
+    medicine_app.initialize_database()
+    with medicine_app.app.test_client() as test_client:
+        response = test_client.post(
+            "/api/auth/setup",
+            json={"email": "main-admin@example.org", "password": "old-admin-password"},
+        )
+    assert response.status_code == 201
+
+    medicine_app.reset_main_admin_password(
+        " MAIN-ADMIN@example.org ", "new-admin-password"
+    )
+
+    with medicine_app.get_db() as connection:
+        user = connection.execute(
+            "SELECT password_hash FROM users WHERE role = 'main_admin'"
+        ).fetchone()
+    assert medicine_app.check_password_hash(user["password_hash"], "new-admin-password")
+    assert not medicine_app.check_password_hash(user["password_hash"], "old-admin-password")
+
+    with pytest.raises(LookupError, match="No main administrator account"):
+        medicine_app.reset_main_admin_password(
+            "missing-admin@example.org", "another-admin-password"
+        )
+    with pytest.raises(ValueError, match="at least 12 characters"):
+        medicine_app.reset_main_admin_password("main-admin@example.org", "short")
+
+
+def test_main_admin_forgot_password_email_is_generic_and_one_time(client, monkeypatch):
+    sent_messages = []
+    monkeypatch.setattr(
+        medicine_app, "send_email_message", lambda message: sent_messages.append(message)
+    )
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.org")
+    monkeypatch.setenv("SMTP_FROM", "alerts@example.org")
+    medicine_app.app.config["PUBLIC_BASE_URL"] = "https://expiry.example.org"
+
+    response = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "main-admin@example.org"},
+    )
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "message": "If a main administrator account exists for that email, a reset link has been sent."
+    }
+    assert len(sent_messages) == 1
+    assert sent_messages[0]["To"] == "main-admin@example.org"
+    token = re.search(
+        r"reset_token=([A-Za-z0-9_-]+)", sent_messages[0].get_content()
+    ).group(1)
+    with medicine_app.get_db() as connection:
+        stored_token = connection.execute(
+            "SELECT token_hash FROM password_reset_tokens"
+        ).fetchone()["token_hash"]
+    assert stored_token != token
+
+    reset = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": token, "password": "replacement-admin-password"},
+    )
+    assert reset.status_code == 200
+    assert client.post("/api/auth/logout").status_code == 200
+    assert client.post(
+        "/api/auth/login",
+        json={
+            "email": "main-admin@example.org",
+            "password": "main-admin-test-password",
+            "role": "main_admin",
+        },
+    ).status_code == 401
+    assert client.post(
+        "/api/auth/login",
+        json={
+            "email": "main-admin@example.org",
+            "password": "replacement-admin-password",
+            "role": "main_admin",
+        },
+    ).status_code == 200
+    replay = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": token, "password": "another-replacement-password"},
+    )
+    assert replay.status_code == 400
+
+    client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "main-admin@example.org"},
+    )
+    expired_token = re.search(
+        r"reset_token=([A-Za-z0-9_-]+)", sent_messages[1].get_content()
+    ).group(1)
+    with medicine_app.get_db() as connection:
+        connection.execute(
+            "UPDATE password_reset_tokens SET expires_at = ?",
+            ("2000-01-01T00:00:00+00:00",),
+        )
+    expired = client.post(
+        "/api/auth/password-reset/confirm",
+        json={"token": expired_token, "password": "expired-token-password"},
+    )
+    assert expired.status_code == 400
+
+    unknown_account = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "unknown@example.org"},
+    )
+    assert unknown_account.status_code == response.status_code
+    assert unknown_account.get_json() == response.get_json()
+    assert len(sent_messages) == 2
+
+
+def test_main_admin_forgot_password_requires_smtp_and_public_url(client, monkeypatch):
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("SMTP_FROM", raising=False)
+    medicine_app.app.config["PUBLIC_BASE_URL"] = "https://expiry.example.org"
+    no_smtp = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "main-admin@example.org"},
+    )
+    assert no_smtp.status_code == 503
+    assert "not configured" in no_smtp.get_json()["error"]
+
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.org")
+    monkeypatch.setenv("SMTP_FROM", "alerts@example.org")
+    medicine_app.app.config["PUBLIC_BASE_URL"] = ""
+    no_public_url = client.post(
+        "/api/auth/password-reset/request",
+        json={"email": "main-admin@example.org"},
+    )
+    assert no_public_url.status_code == 503
+    assert "PUBLIC_BASE_URL" in no_public_url.get_json()["error"]
 
 
 def test_main_admin_provisions_and_branch_head_signs_in(tmp_path, monkeypatch):

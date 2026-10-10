@@ -1,5 +1,6 @@
 import csv
 import functools
+import hashlib
 import io
 import logging
 import os
@@ -10,9 +11,10 @@ import sqlite3
 import ssl
 import threading
 from contextlib import contextmanager
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
+from urllib.parse import quote, urlsplit
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, make_response, render_template, request, session
@@ -32,6 +34,7 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE") == "1"
+app.config["PUBLIC_BASE_URL"] = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
 
 
 @contextmanager
@@ -72,6 +75,26 @@ def valid_email(value):
     )
 
 
+def reset_main_admin_password(email, password):
+    if not valid_email(email):
+        raise ValueError("Enter a valid main administrator email address.")
+    if not isinstance(password, str) or len(password) < 12:
+        raise ValueError("Main administrator password must be at least 12 characters.")
+
+    with get_db() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        cursor = connection.execute(
+            """
+            UPDATE users
+            SET password_hash = ?
+            WHERE username = ? AND role = 'main_admin'
+            """,
+            (generate_password_hash(password), email.strip().lower()),
+        )
+        if cursor.rowcount == 0:
+            raise LookupError("No main administrator account exists with that email.")
+
+
 def expiry_status(expiry_date, today=None):
     today = today or date.today()
     days_remaining = (date.fromisoformat(expiry_date) - today).days
@@ -105,22 +128,8 @@ def serialize_medicine(row, today=None):
 
 
 def send_expiry_email(recipient, branch_name, medicines):
-    host = os.environ.get("SMTP_HOST")
-    sender = os.environ.get("SMTP_FROM")
-    username = os.environ.get("SMTP_USERNAME")
-    password = os.environ.get("SMTP_PASSWORD")
-    if not host or not sender:
-        raise RuntimeError("SMTP_HOST and SMTP_FROM must be configured to send expiry emails.")
-    if bool(username) != bool(password):
-        raise RuntimeError("Configure both SMTP_USERNAME and SMTP_PASSWORD, or neither.")
-    try:
-        port = int(os.environ.get("SMTP_PORT", "587"))
-    except ValueError as error:
-        raise RuntimeError("SMTP_PORT must be a valid port number.") from error
-
     message = EmailMessage()
     message["Subject"] = f"Medicine expiry alert: {branch_name}"
-    message["From"] = sender
     message["To"] = recipient
     lines = [
         f"Expiry alert for {branch_name}",
@@ -142,6 +151,24 @@ def send_expiry_email(recipient, branch_name, medicines):
     lines.extend(["", "Please review these medicines and take appropriate action."])
     message.set_content("\n".join(lines))
 
+    send_email_message(message)
+
+
+def send_email_message(message):
+    host = os.environ.get("SMTP_HOST")
+    sender = os.environ.get("SMTP_FROM")
+    username = os.environ.get("SMTP_USERNAME")
+    password = os.environ.get("SMTP_PASSWORD")
+    if not host or not sender:
+        raise RuntimeError("SMTP_HOST and SMTP_FROM must be configured to send emails.")
+    if bool(username) != bool(password):
+        raise RuntimeError("Configure both SMTP_USERNAME and SMTP_PASSWORD, or neither.")
+    try:
+        port = int(os.environ.get("SMTP_PORT", "587"))
+    except ValueError as error:
+        raise RuntimeError("SMTP_PORT must be a valid port number.") from error
+
+    message["From"] = sender
     use_ssl = os.environ.get("SMTP_USE_SSL") == "1"
     use_starttls = os.environ.get("SMTP_USE_TLS", "1") == "1"
     smtp_class = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
@@ -333,6 +360,15 @@ def initialize_database():
                 expiry_date TEXT NOT NULL,
                 sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (medicine_id, expiry_date)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at TEXT NOT NULL
             )
             """
         )
@@ -555,6 +591,133 @@ def login():
         }
     )
     return jsonify({"user": current_user()})
+
+
+@app.post("/api/auth/password-reset/request")
+def request_main_admin_password_reset():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Request body must be a JSON object."}), 400
+    email = payload.get("email")
+    if not valid_email(email):
+        return jsonify({"error": "Enter a valid email address."}), 400
+
+    public_base_url = app.config["PUBLIC_BASE_URL"]
+    try:
+        parsed_base_url = urlsplit(public_base_url)
+        hostname = parsed_base_url.hostname
+    except ValueError:
+        parsed_base_url = None
+        hostname = None
+    if parsed_base_url is None:
+        return jsonify(
+            {"error": "Password recovery needs a valid HTTPS PUBLIC_BASE_URL setting."}
+        ), 503
+    local_http = parsed_base_url.scheme == "http" and hostname in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }
+    if (
+        not parsed_base_url.netloc
+        or parsed_base_url.username
+        or parsed_base_url.password
+        or parsed_base_url.query
+        or parsed_base_url.fragment
+        or (parsed_base_url.scheme != "https" and not local_http)
+    ):
+        return jsonify(
+            {"error": "Password recovery needs a valid HTTPS PUBLIC_BASE_URL setting."}
+        ), 503
+    if not os.environ.get("SMTP_HOST") or not os.environ.get("SMTP_FROM"):
+        return jsonify(
+            {"error": "Password recovery email is not configured. Contact the app administrator."}
+        ), 503
+
+    with get_db() as connection:
+        user = connection.execute(
+            "SELECT id, username FROM users WHERE username = ? AND role = 'main_admin'",
+            (email.strip().lower(),),
+        ).fetchone()
+        if user is None:
+            return jsonify(
+                {"message": "If a main administrator account exists for that email, a reset link has been sent."}
+            )
+
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+        connection.execute(
+            """
+            INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                token_hash = excluded.token_hash,
+                expires_at = excluded.expires_at
+            """,
+            (user["id"], token_hash, expires_at),
+        )
+
+    reset_url = f"{public_base_url}/?reset_token={quote(token, safe='')}"
+    message = EmailMessage()
+    message["To"] = user["username"]
+    message["Subject"] = "Reset your ExpiryCare administrator password"
+    message.set_content(
+        "A password reset was requested for your ExpiryCare main administrator account.\n\n"
+        f"Use this one-time link within 30 minutes:\n{reset_url}\n\n"
+        "If you did not request this reset, you can ignore this email."
+    )
+    try:
+        send_email_message(message)
+    except (OSError, RuntimeError, smtplib.SMTPException, ValueError):
+        with get_db() as connection:
+            connection.execute(
+                "DELETE FROM password_reset_tokens WHERE user_id = ? AND token_hash = ?",
+                (user["id"], token_hash),
+            )
+        logger.exception("Could not send a main administrator password reset email.")
+        return jsonify(
+            {"error": "The reset email could not be sent. Check the email settings or use local recovery."}
+        ), 503
+
+    return jsonify(
+        {"message": "If a main administrator account exists for that email, a reset link has been sent."}
+    )
+
+
+@app.post("/api/auth/password-reset/confirm")
+def reset_main_admin_password_with_token():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Request body must be a JSON object."}), 400
+    token = payload.get("token")
+    password = payload.get("password")
+    if not isinstance(token, str) or not token:
+        return jsonify({"error": "The reset link is invalid or has expired."}), 400
+    if not isinstance(password, str) or len(password) < 12:
+        return jsonify({"error": "Password must be at least 12 characters."}), 400
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        reset = connection.execute(
+            """
+            SELECT user_id FROM password_reset_tokens
+            WHERE token_hash = ? AND expires_at > ?
+            """,
+            (token_hash, now),
+        ).fetchone()
+        if reset is None:
+            return jsonify({"error": "The reset link is invalid or has expired."}), 400
+        connection.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ? AND role = 'main_admin'",
+            (generate_password_hash(password), reset["user_id"]),
+        )
+        connection.execute(
+            "DELETE FROM password_reset_tokens WHERE user_id = ?", (reset["user_id"],)
+        )
+    return jsonify({"message": "Password reset successfully. Sign in with your new password."})
 
 
 def current_user():

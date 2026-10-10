@@ -56,6 +56,18 @@ Expiry status windows are inclusive: 0–7 days is urgent, 8–30 days is soon, 
 
 On first visit, create a main administrator with a valid email and a password of at least 12 characters. Setup signs you in. Use the **Branch access** page to create hospital branches and grant each head access by setting their email and password. For an existing branch, save updated credentials to replace its current branch-head access. Share login credentials directly and securely; this app does not email invitations. Branch heads sign in by choosing their hospital branch and using their assigned email and password.
 
+### Reset the main administrator password
+
+On the sign-in page, select **Main administrator**, choose **Forgot password?**, and enter the administrator email. If it matches the registered account, the app emails a one-time link that expires after 30 minutes. Email recovery requires working SMTP settings and `PUBLIC_BASE_URL` set to the app's public HTTPS address (for example, the ngrok URL). The link can only be used once.
+
+For local recovery when email is unavailable, run this command in a terminal on the computer hosting the app. It prompts for the administrator email and new password without displaying the password.
+
+```powershell
+python reset_admin_password.py
+```
+
+Enter the email for the existing main administrator account and a new password of at least 12 characters, then use the new password to sign in.
+
 ### Configure expiry alert email
 
 The app checks for due expiry alerts at startup and hourly while running. It sends one email digest per branch head, containing newly-alerting medicine batches for that branch. An alert is recorded as sent only after the SMTP server accepts the message. It is not repeated for the same medicine batch and expiry date. Email is not sent until an SMTP server is configured. Set these environment variables before starting the app:
@@ -76,9 +88,10 @@ SMTP_USERNAME=your-smtp-login
 SMTP_PASSWORD=your-smtp-password
 SMTP_FROM=medicine-alerts@example.org
 SMTP_USE_TLS=1
+PUBLIC_BASE_URL=https://your-public-app.example.org
 ```
 
-For an SSL-wrapped SMTP connection (commonly port 465), set `SMTP_USE_SSL=1` and `SMTP_USE_TLS=0`. The scheduler runs inside the `python app.py` process; for production, keep one scheduler-enabled app process running or run an equivalent single scheduler process alongside the web workers. SMTP connection failures are logged and unrecorded alerts are retried on the next hourly check.
+Set `PUBLIC_BASE_URL` to the public HTTPS origin where users open the app; password-reset emails use it to build trusted links. For an SSL-wrapped SMTP connection (commonly port 465), set `SMTP_USE_SSL=1` and `SMTP_USE_TLS=0`. The scheduler runs inside the `python app.py` process; for production, keep one scheduler-enabled app process running or run an equivalent single scheduler process alongside the web workers. SMTP connection failures are logged and unrecorded alerts are retried on the next hourly check.
 
 The SQLite database (`medicines.db`) is created in the project directory. A fresh database includes realistic sample medicines in the initial branch. A migrated database preserves medicine records and branch accounts. Legacy system administrator accounts are retained as main administrator accounts where possible.
 

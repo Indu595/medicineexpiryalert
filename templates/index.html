@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=4) }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=5) }}">
 </head>
 <body>
   <main class="auth-screen" id="authView" hidden>
@@ -30,6 +30,22 @@
         <label class="form-field"><span>Password</span><input class="auth-input" name="password" type="password" autocomplete="current-password" required></label>
         <div class="auth-error" id="loginError" role="alert"></div>
         <button class="button button-primary auth-submit" type="submit" id="loginButton">Sign in</button>
+        <button class="auth-text-button" id="forgotPasswordButton" type="button" hidden>Forgot password?</button>
+      </form>
+      <form id="passwordResetRequestForm" hidden>
+        <p class="setup-notice">Enter the email address for the main administrator account. If it matches, we’ll email a one-time reset link that expires in 30 minutes.</p>
+        <label class="form-field"><span>Main administrator email</span><input class="auth-input" name="email" id="resetRequestEmail" type="email" autocomplete="username" required></label>
+        <div class="auth-error" id="passwordResetRequestError" role="alert"></div>
+        <div class="auth-success" id="passwordResetRequestSuccess" role="status"></div>
+        <button class="button button-primary auth-submit" type="submit" id="passwordResetRequestButton">Send reset link</button>
+        <button class="auth-text-button" id="backToLoginFromRequest" type="button">Back to sign in</button>
+      </form>
+      <form id="passwordResetForm" hidden>
+        <p class="setup-notice">Choose a new password for the main administrator account. Passwords must be at least 12 characters.</p>
+        <label class="form-field"><span>New password</span><input class="auth-input" name="password" id="resetPassword" type="password" minlength="12" autocomplete="new-password" required></label>
+        <label class="form-field"><span>Confirm new password</span><input class="auth-input" name="confirm_password" id="confirmResetPassword" type="password" minlength="12" autocomplete="new-password" required></label>
+        <div class="auth-error" id="passwordResetError" role="alert"></div>
+        <button class="button button-primary auth-submit" type="submit" id="passwordResetSubmitButton">Reset password</button>
       </form>
       <form id="setupForm" hidden>
         <p class="setup-notice">Create the main administrator account. You can then create hospital branches and issue branch-head email and password credentials. Passwords must be at least 12 characters.</p>
@@ -175,6 +191,6 @@
     </section>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='app.js', v=3) }}" defer></script>
+  <script src="{{ url_for('static', filename='app.js', v=4) }}" defer></script>
 </body>
 </html>

@@ -5,6 +5,7 @@ let dashboardRequest = 0;
 let currentUser = null;
 let dashboardInitialized = false;
 let speakAlertsOnLoad = false;
+let passwordResetToken = null;
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -308,6 +309,14 @@ function init() {
   $("#appShell").hidden = true;
   startApp();
   $("#loginForm").addEventListener("submit", handleLogin);
+  $("#forgotPasswordButton").addEventListener("click", showPasswordResetRequest);
+  $("#passwordResetRequestForm").addEventListener("submit", handlePasswordResetRequest);
+  $("#passwordResetForm").addEventListener("submit", handlePasswordReset);
+  $("#backToLoginFromRequest").addEventListener("click", () => {
+    $("#loginRole").value = "main_admin";
+    showAuthForm("login");
+    updateLoginFields();
+  });
   $("#setupForm").addEventListener("submit", handleInitialSetup);
   $("#showSignup").addEventListener("click", () => showAuthForm("signup"));
   $("#showLogin").addEventListener("click", () => showAuthForm("login"));
@@ -395,6 +404,12 @@ async function startApp() {
   try {
     const setup = await api("/api/auth/setup-status");
     populateBranches(setup.branches);
+    passwordResetToken = new URLSearchParams(window.location.search).get("reset_token");
+    if (passwordResetToken) {
+      window.history.replaceState({}, "", window.location.pathname);
+      showPasswordResetForm();
+      return;
+    }
     if (setup.needs_setup) {
       $("#authSwitch").hidden = false;
       showAuthForm("signup");
@@ -403,7 +418,7 @@ async function startApp() {
       return;
     }
     $("#authSwitch").hidden = true;
-    $("#loginForm").hidden = false;
+    showAuthForm("login");
     $("#setupForm").hidden = true;
     $("#authTitle").textContent = "Sign in to ExpiryCare";
     $("#authDescription").textContent = "Sign in with the account provided by your hospital administrator.";
@@ -425,6 +440,9 @@ function showAuthForm(form) {
   const signingUp = form === "signup";
   $("#loginForm").hidden = signingUp;
   $("#setupForm").hidden = !signingUp;
+  $("#passwordResetRequestForm").hidden = true;
+  $("#passwordResetForm").hidden = true;
+  $("#forgotPasswordButton").hidden = signingUp || $("#loginRole").value !== "main_admin";
   $("#showSignup").classList.toggle("auth-switch-active", signingUp);
   $("#showLogin").classList.toggle("auth-switch-active", !signingUp);
   if (signingUp) {
@@ -491,6 +509,29 @@ function updateLoginFields() {
   const isBranchHead = $("#loginRole").value === "branch_admin";
   $("#loginBranchField").hidden = !isBranchHead;
   $("#loginBranch").required = isBranchHead;
+  $("#forgotPasswordButton").hidden = isBranchHead || $("#loginForm").hidden;
+}
+
+function showPasswordResetRequest() {
+  $("#loginForm").hidden = true;
+  $("#setupForm").hidden = true;
+  $("#passwordResetForm").hidden = true;
+  $("#passwordResetRequestForm").hidden = false;
+  $("#resetRequestEmail").value = $("#loginForm").elements.email.value;
+  $("#passwordResetRequestError").textContent = "";
+  $("#passwordResetRequestSuccess").textContent = "";
+  $("#authTitle").textContent = "Forgot password?";
+  $("#authDescription").textContent = "Request a secure reset link for the main administrator account.";
+}
+
+function showPasswordResetForm() {
+  $("#authSwitch").hidden = true;
+  $("#loginForm").hidden = true;
+  $("#setupForm").hidden = true;
+  $("#passwordResetRequestForm").hidden = true;
+  $("#passwordResetForm").hidden = false;
+  $("#authTitle").textContent = "Reset administrator password";
+  $("#authDescription").textContent = "Use the reset link from your email to choose a new password.";
 }
 
 function updateNewBranchField() {
@@ -547,6 +588,55 @@ async function handleLogin(event) {
     showAuthenticated(result.user);
   } catch (error) {
     $("#loginError").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function handlePasswordResetRequest(event) {
+  event.preventDefault();
+  const button = $("#passwordResetRequestButton");
+  $("#passwordResetRequestError").textContent = "";
+  $("#passwordResetRequestSuccess").textContent = "";
+  button.disabled = true;
+  try {
+    const result = await api("/api/auth/password-reset/request", {
+      method: "POST",
+      body: JSON.stringify({ email: $("#resetRequestEmail").value }),
+    });
+    $("#passwordResetRequestSuccess").textContent = result.message;
+  } catch (error) {
+    $("#passwordResetRequestError").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function handlePasswordReset(event) {
+  event.preventDefault();
+  const password = $("#resetPassword").value;
+  $("#passwordResetError").textContent = "";
+  if (password !== $("#confirmResetPassword").value) {
+    $("#passwordResetError").textContent = "Passwords do not match.";
+    return;
+  }
+  const button = $("#passwordResetSubmitButton");
+  button.disabled = true;
+  try {
+    const result = await api("/api/auth/password-reset/confirm", {
+      method: "POST",
+      body: JSON.stringify({ token: passwordResetToken, password }),
+    });
+    passwordResetToken = null;
+    window.history.replaceState({}, "", window.location.pathname);
+    $("#passwordResetForm").reset();
+    $("#loginRole").value = "main_admin";
+    showAuthForm("login");
+    updateLoginFields();
+    $("#authTitle").textContent = "Sign in to ExpiryCare";
+    $("#authDescription").textContent = result.message;
+  } catch (error) {
+    $("#passwordResetError").textContent = error.message;
   } finally {
     button.disabled = false;
   }
