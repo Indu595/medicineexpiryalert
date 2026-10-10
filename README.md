@@ -70,7 +70,7 @@ Enter the email for the existing main administrator account and a new password o
 
 ### Configure expiry alert email
 
-The app checks for due expiry alerts at startup and hourly while running. It sends one email digest per branch head, containing newly-alerting medicine batches for that branch. An alert is recorded as sent only after the SMTP server accepts the message. It is not repeated for the same medicine batch and expiry date. Email is not sent until an SMTP server is configured. Set these environment variables before starting the app:
+The app checks for due expiry alerts at startup and hourly while running. When a medicine is added or edited with an expiry date within 15 days, it also starts an immediate background check and sends an email digest to that branch head. Each digest contains newly-alerting medicine batches for that branch. An alert is recorded as sent only after the SMTP server accepts the message. It is not repeated for the same medicine batch and expiry date. Email is not sent until an SMTP server is configured. Set these environment variables before starting the app:
 
 For Gmail, turn on 2-Step Verification for the sender's Google account, then create a Google **App Password** (use that generated password, not the normal Gmail password). Copy `.env.example` to `.env`, replace the sender and App Password placeholders in `.env`, then restart Flask. Use the same Gmail address for `SMTP_USERNAME`, `SMTP_FROM`, and the branch head email if the sender and recipient should be the same. Remove any spaces from the Google App Password before putting it in `.env`.
 

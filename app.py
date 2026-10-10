@@ -27,6 +27,7 @@ DATABASE = Path(os.environ.get("MEDICINE_DB", BASE_DIR / "medicines.db"))
 LOW_STOCK_THRESHOLD = 10
 EXPIRY_EMAIL_CHECK_INTERVAL_SECONDS = 60 * 60
 logger = logging.getLogger(__name__)
+expiry_email_check_lock = threading.Lock()
 
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
@@ -251,6 +252,28 @@ def send_pending_expiry_emails(today=None):
     return sent_count
 
 
+def check_pending_expiry_emails():
+    with expiry_email_check_lock:
+        try:
+            send_pending_expiry_emails()
+        except (OSError, sqlite3.Error):
+            logger.exception("Expiry email check failed.")
+
+
+def trigger_pending_expiry_email_check():
+    if not os.environ.get("SMTP_HOST") or not os.environ.get("SMTP_FROM"):
+        logger.warning(
+            "Immediate expiry email alert was not sent: configure SMTP_HOST and "
+            "SMTP_FROM in .env, then restart."
+        )
+        return
+    threading.Thread(
+        target=check_pending_expiry_emails,
+        name="immediate-expiry-email-check",
+        daemon=True,
+    ).start()
+
+
 def run_expiry_email_scheduler():
     if not os.environ.get("SMTP_HOST") or not os.environ.get("SMTP_FROM"):
         logger.warning(
@@ -258,10 +281,7 @@ def run_expiry_email_scheduler():
         )
         return
     while True:
-        try:
-            send_pending_expiry_emails()
-        except (OSError, sqlite3.Error):
-            logger.exception("Expiry email check failed.")
+        check_pending_expiry_emails()
         threading.Event().wait(EXPIRY_EMAIL_CHECK_INTERVAL_SECONDS)
 
 
@@ -902,7 +922,10 @@ def create_medicine():
         return jsonify(
             {"error": "This medicine batch already exists in your branch."}
         ), 409
-    return jsonify(serialize_medicine(row)), 201
+    result = serialize_medicine(row)
+    if result["notification_due"]:
+        trigger_pending_expiry_email_check()
+    return jsonify(result), 201
 
 
 @app.put("/api/medicines/<int:medicine_id>")
@@ -934,7 +957,10 @@ def update_medicine(medicine_id):
         return jsonify(
             {"error": "This medicine batch already exists in your branch."}
         ), 409
-    return jsonify(serialize_medicine(row))
+    result = serialize_medicine(row)
+    if result["notification_due"]:
+        trigger_pending_expiry_email_check()
+    return jsonify(result)
 
 
 @app.delete("/api/medicines/<int:medicine_id>")

@@ -332,6 +332,8 @@ function init() {
     $("#branchAccessForm").elements.email.focus();
   });
   $("#logoutButton").addEventListener("click", logout);
+  $("#adminBackToSignIn").addEventListener("click", logout);
+  $("#branchBackToSignIn").addEventListener("click", logout);
   bindDashboardEvents();
 }
 

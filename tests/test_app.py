@@ -470,6 +470,38 @@ def test_stats_and_csv_export(client):
     assert len(data) == stats["total"] + 1
 
 
+def test_due_medicine_changes_trigger_immediate_email_check(client, monkeypatch):
+    checks = []
+    monkeypatch.setattr(
+        medicine_app,
+        "trigger_pending_expiry_email_check",
+        lambda: checks.append(True),
+    )
+    due_expiry = (date.today() + timedelta(days=10)).isoformat()
+    safe_expiry = (date.today() + timedelta(days=40)).isoformat()
+
+    created_due = client.post(
+        "/api/medicines",
+        json=payload(name="Due medicine", batch_number="DUE-001", expiry_date=due_expiry),
+    )
+    assert created_due.status_code == 201
+    assert len(checks) == 1
+
+    created_safe = client.post(
+        "/api/medicines",
+        json=payload(name="Safe medicine", batch_number="SAFE-001", expiry_date=safe_expiry),
+    )
+    assert created_safe.status_code == 201
+    assert len(checks) == 1
+
+    updated = client.put(
+        f"/api/medicines/{created_safe.get_json()['id']}",
+        json=payload(name="Safe medicine", batch_number="SAFE-001", expiry_date=due_expiry),
+    )
+    assert updated.status_code == 200
+    assert len(checks) == 2
+
+
 def test_initialize_database_migrates_existing_records(tmp_path, monkeypatch):
     database = tmp_path / "existing-medicines.db"
     with sqlite3.connect(database) as connection:
